@@ -120,23 +120,6 @@ function renderEMAStack(data) {
     }
 }
 
-// ===== HTTP Fallback for Chart Data (when socket disconnects) =====
-async function fetchChartData(symbol) {
-    if (!symbol || !isRunning) return;
-    try {
-        const r = await fetch(`/api/test_chart?symbol=${symbol}`);
-        const data = await r.json();
-        if (data.success && data.candles && data.candles.length > 0) {
-            chartDataBySymbol[symbol] = { symbol, candles: data.candles, emas: {} };
-            if (symbol === activeSymbol) {
-                renderChartForSymbol(symbol);
-            }
-        }
-    } catch (e) {
-        // Silent fail
-    }
-}
-
 // ===== Chart Setup (TradingView style with zoom/pan) =====
 function initChart() {
     try {
@@ -272,43 +255,64 @@ function renderChartForSymbol(symbol) {
     }
 }
 
-// ===== Socket Setup (failsafe with auto-reconnect) =====
+// ===== Socket Setup =====
+// Railway runs behind an HTTPS reverse proxy. We must:
+//  1. Connect with same-origin (no explicit URL) so wss:// works
+//  2. Allow polling as fallback (pure websocket can fail through proxies)
+//  3. Force a fresh connection on reconnect (avoid stale transport)
+//  4. Retry forever with backoff — Railway restarts happen often
 function initSocket() {
     try {
         if (typeof io === 'undefined') {
             log('warn', 'Socket.IO load nahi hui. Status polling se hogi.');
+            startStatusPollingFallback();
             return false;
         }
-        // Use polling first (Railway proxy friendly), then upgrade to websocket
+
+        // Same-origin connect: lets socket.io auto-detect https->wss / http->ws
+        // and use the correct path even when Railway mounts the app at root.
         socket = io({
             transports: ['polling', 'websocket'],
-            reconnection: true,          // Auto-reconnect on disconnect
-            reconnectionAttempts: Infinity,  // Never give up
-            reconnectionDelay: 1000,     // Start at 1s
-            reconnectionDelayMax: 5000,  // Max 5s between retries
-            timeout: 20000,              // 20s connect timeout
-            pingInterval: 10000,         // Send ping every 10s (keepalive)
-            pingTimeout: 30000,          // 30s ping timeout
+            upgrade: true,
+            rememberUpgrade: false,        // always re-negotiate transport
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 10000,
+            timeout: 30000,
+            forceNew: true,
+            // Railway proxy can buffer — ask for long-polling duration packets
+            pollingDuration: 30000,
         });
 
         socket.on('connect', () => {
-            log('success', '✅ Socket connected');
-            // Re-fetch chart data on reconnect (in case we missed updates)
-            if (activeSymbol && isRunning) {
-                fetchChartData(activeSymbol);
+            log('info', 'Socket connected');
+            // Re-sync state on every fresh connect (Railway may have restarted)
+            if (isRunning) {
+                fetch('/api/status').then(r => r.json()).then(data => {
+                    if (data && data.running) {
+                        setBotRunning(true);
+                    }
+                }).catch(() => {});
             }
         });
+
+        socket.on('connect_error', (err) => {
+            // Silent — socket.io will retry. Only log first few.
+            if (!initSocket._errCount) initSocket._errCount = 0;
+            initSocket._errCount++;
+            if (initSocket._errCount <= 3) {
+                log('warn', `Socket connect error: ${err.message || err}`);
+            }
+        });
+
         socket.on('disconnect', (reason) => {
-            log('warn', `⚠️ Socket disconnected: ${reason}. Auto-reconnecting...`);
-        });
-        socket.on('reconnect', (attempt) => {
-            log('success', `✅ Socket reconnected (attempt ${attempt})`);
-        });
-        socket.on('reconnect_error', (error) => {
-            // Silent - don't spam logs
-        });
-        socket.on('connect_error', (error) => {
-            // Silent - don't spam logs
+            log('warn', `Socket disconnected: ${reason}`);
+            // If server kicked us, socket.io will auto-retry.
+            // If we did it on purpose ('io client disconnect'), don't poll.
+            if (reason === 'io server disconnect') {
+                socket.connect();
+            }
         });
 
         socket.on('log', (data) => log(data.level || 'info', data.msg));
@@ -403,8 +407,28 @@ function initSocket() {
     } catch (e) {
         console.error('Socket init failed:', e);
         log('warn', `Socket init failed: ${e.message}`);
+        startStatusPollingFallback();
         return false;
     }
+}
+
+// ===== HTTP Polling Fallback =====
+// If socket.io completely fails (corporate firewall, weird proxy),
+// poll /api/status every 5s so the UI still updates.
+let _pollTimer = null;
+function startStatusPollingFallback() {
+    if (_pollTimer) return;
+    log('info', 'HTTP polling fallback shuru (5s interval)');
+    _pollTimer = setInterval(() => {
+        fetch('/api/status', { cache: 'no-store' })
+            .then(r => r.json())
+            .then(data => {
+                if (!data) return;
+                setBotRunning(!!data.running);
+                if (data.message) log('info', data.message);
+            })
+            .catch(() => {});
+    }, 5000);
 }
 
 function updatePositionUI(data) {
@@ -876,10 +900,6 @@ async function refreshStatus() {
                 if ($('statCoins')) $('statCoins').textContent = coins.length;
             }
         }
-        // HTTP fallback: If socket is disconnected, fetch chart data via HTTP
-        if (isRunning && activeSymbol && (!socket || !socket.connected)) {
-            fetchChartData(activeSymbol);
-        }
     } catch (e) { /* ignore */ }
 }
 
@@ -1151,6 +1171,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try { initChart(); } catch (e) { console.error(e); }
 
-    setInterval(refreshStatus, 3000);
+    setInterval(refreshStatus, 5000);
     setInterval(refreshBalance, 10000);
 });

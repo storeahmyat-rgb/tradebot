@@ -1,0 +1,12 @@
+# Nixpacks build config for Railway
+# https://nixpacks.com/docs/providers/python
+
+# Python version pinned via runtime.txt
+setup:
+  - "python -m pip install --upgrade pip"
+
+install:
+  - "pip install -r requirements.txt"
+
+start:
+  - "python app.py"

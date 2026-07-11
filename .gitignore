@@ -4,8 +4,12 @@ __pycache__/
 *$py.class
 *.so
 venv/
-env/
 .env
+.venv/
+.python-version
+.local_activation.dat
+licenses.dat
+*.zip
 
 # Logs (keep folder, ignore contents)
 logs/*.log

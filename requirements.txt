@@ -1,25 +1,29 @@
 # Binance Futures Trading Bot - Python Dependencies
 # Install with:  pip install -r requirements.txt
 
-# Web framework
+# ===== Web framework + Railway-compatible async =====
 Flask==3.0.3
 Flask-SocketIO==5.3.6
 python-engineio==4.9.1
 python-socketio==5.11.4
 simple-websocket==1.0.0
+# Eventlet gives us real WebSocket (ws:// + wss://) support which is
+# REQUIRED for Flask-SocketIO to work behind Railway's reverse proxy.
+# Without it, "threading" mode falls back to long-polling and times out.
+eventlet==0.36.1
 
-# Binance API clients
+# ===== Binance API clients =====
 binance-futures-connector==1.5.0
 python-binance==1.0.19
 
-# Data / math
+# ===== Data / math =====
 pandas==2.2.3
 numpy==1.26.4
 pyarrow>=15.0.0
 
-# Utilities
+# ===== Utilities =====
 python-dotenv==1.0.1
 
-# Build tools
-pyinstaller>=6.0
-pyarmor>=8.0
+# ===== Build tools (only needed locally for .exe packaging) =====
+# pyinstaller>=6.0
+# pyarmor>=8.0

@@ -48,21 +48,28 @@ python --version
 
 ### Step 2: Project Folder Mein Jaayein
 ```bash
-cd binance-futures-bot
+cd weex_bot
 ```
 
-### Step 3: Virtual Environment Banaayein (recommended)
+### Step 3: Python Version Check Karein
+```bash
+python --version
+```
+
+Is repository ke liye Python 3.13 use karein. Agar aapke system me `python3.13` available ho to use karo.
+
+### Step 4: Virtual Environment Banaayein (recommended)
 ```bash
 # Windows
 python -m venv venv
 venv\Scripts\activate
 
 # Linux / Mac
-python3 -m venv venv
+python3.13 -m venv venv
 source venv/bin/activate
 ```
 
-### Step 4: Dependencies Install Karein
+### Step 5: Dependencies Install Karein
 ```bash
 pip install -r requirements.txt
 ```

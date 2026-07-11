@@ -1,12 +1,12 @@
 #!/bin/bash
-# Binance Futures Bot - Linux/Mac launcher
+# Binance Futures Bot - Linux/Mac/Railway launcher
 cd "$(dirname "$0")"
 
 echo "================================"
 echo " Binance Futures Bot - Starting"
 echo "================================"
 
-# Activate venv if exists
+# Activate venv if exists (local dev only — Railway uses global pip)
 if [ -d "venv" ]; then
     echo "Activating virtual environment..."
     source venv/bin/activate
@@ -19,8 +19,11 @@ if [ $? -ne 0 ]; then
     pip install -r requirements.txt
 fi
 
-# Start the bot
-echo "Starting web server at http://localhost:5000"
+# Railway injects PORT. Default to 5000 for local dev.
+export PORT=${PORT:-5000}
+export HOST=${HOST:-0.0.0.0}
+
+echo "Starting web server at http://${HOST}:${PORT}"
 echo "Press Ctrl+C to stop"
 echo "================================"
 python app.py

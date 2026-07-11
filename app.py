@@ -17,6 +17,21 @@ SocketIO events emitted:
 """
 from __future__ import annotations
 
+# ============================================================
+# EVENTLET MONKEY PATCH — MUST BE FIRST!
+# Railway (and most PaaS) need a real async WebSocket server.
+# Flask-SocketIO's "threading" mode falls back to long-polling
+# and times out behind Railway's reverse proxy. Eventlet gives
+# us proper ws:// + wss:// support and keeps threading.Thread
+# working (eventlet provides a greenlet-based Thread shim).
+# ============================================================
+try:
+    import eventlet
+    eventlet.monkey_patch(thread=True, select=True, socket=True, time=True)
+    _ASYNC_MODE = "eventlet"
+except ImportError:  # eventlet not installed -> fall back to threading
+    _ASYNC_MODE = "threading"
+
 import json
 import logging
 import os
@@ -68,9 +83,10 @@ app.config["SECRET_KEY"] = "binance-futures-bot-license-protected-2024"
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="threading",
-    ping_timeout=60,
+    async_mode=_ASYNC_MODE,           # "eventlet" on Railway, "threading" as fallback
+    ping_timeout=120,                 # generous — Railway proxy can be slow
     ping_interval=25,
+    max_http_buffer_size=10_000_000,  # 10 MB — large chart_data frames
     logger=False,
     engineio_logger=False,
 )
@@ -615,12 +631,18 @@ def _crash_handler(exc_type, exc_value, exc_tb):
     print("Crash log saved to: crash.log")
     print("Please share this with the developer.")
     print("=" * 60)
-    # Keep console open so user can read the error
-    try:
-        input("\nPress Enter to close...")
-    except Exception:
-        import time
-        time.sleep(30)
+    # Keep console open so user can read the error — but ONLY when running
+    # interactively (local dev). On Railway / Docker stdin is closed, so
+    # calling input() raises EOFError and crashes the container into a
+    # crash-loop. Detect TTY and skip the prompt there.
+    if sys.stdin and sys.stdin.isatty():
+        try:
+            input("\nPress Enter to close...")
+        except Exception:
+            import time
+            time.sleep(30)
+    else:
+        logger.error("Non-interactive environment detected — exiting without prompt.")
     sys.exit(1)
 
 
@@ -630,13 +652,17 @@ if __name__ == "__main__":
     _sys.excepthook = _crash_handler
 
     try:
+        # Railway injects PORT env var. Default to 5000 for local dev.
         port = int(os.environ.get("PORT", 5000))
         host = os.environ.get("HOST", "0.0.0.0")
         logger.info("=" * 60)
         logger.info(" Binance Futures Bot - EMA Quad Strategy (Multi-Symbol)")
-        logger.info(" Open in browser: http://127.0.0.1:%d", port)
+        logger.info(" Async mode: %s", _ASYNC_MODE)
+        logger.info(" Listening on http://%s:%d", host, port)
         logger.info(" Press Ctrl+C to stop")
         logger.info("=" * 60)
+        # NOTE: do NOT pass log_output / log when running under eventlet —
+        # Werkzeug's logging hooks deadlock with greenlets in some setups.
         socketio.run(
             app,
             host=host,
@@ -648,3 +674,13 @@ if __name__ == "__main__":
     except Exception as e:
         # Trigger our custom handler
         _crash_handler(type(e), e, e.__traceback__)
+
+
+# ============================================================
+# WSGI ENTRYPOINT (for Railway / gunicorn-style runners)
+# Some Railway setups prefer `gunicorn app:app` over `python app.py`.
+# Exposing `app` at module level lets Railway fall back to WSGI mode
+# if SocketIO's async server is not desired. SocketIO still works
+# because flask_socketio decorates the same app object.
+# ============================================================
+# (app + socketio are already defined above)

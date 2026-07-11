@@ -1,0 +1,38 @@
+# Files that should NOT go into the Railway build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local dev artifacts
+venv/
+.venv/
+env/
+.env
+
+# Build outputs
+build/
+dist/
+*.spec.bak
+
+# Logs and runtime data
+logs/
+*.log
+crash.log
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Local config overrides (Railway provides its own env vars)
+# NOTE: do NOT ignore config.json — bot needs it as default fallback
