@@ -2,11 +2,11 @@
 # https://nixpacks.com/docs/providers/python
 
 # Python version pinned via runtime.txt
-setup:
-  - "python -m pip install --upgrade pip"
+[setup]
+commands = ["python -m pip install --upgrade pip"]
 
-install:
-  - "pip install -r requirements.txt"
+[install]
+commands = ["pip install -r requirements.txt"]
 
-start:
-  - "python app.py"
+[start]
+commands = ["python app.py"]
